@@ -53,6 +53,7 @@ typedef struct list {
     unsigned long len;
 } list;
 
+/*宏定义*/
 /* Functions implemented as macros */
 #define listLength(l) ((l)->len)
 #define listFirst(l) ((l)->head)
@@ -69,6 +70,7 @@ typedef struct list {
 #define listGetFree(l) ((l)->free)
 #define listGetMatchMethod(l) ((l)->match)
 
+/*主要函数*/
 /* Prototypes */
 list *listCreate(void);
 void listRelease(list *list);

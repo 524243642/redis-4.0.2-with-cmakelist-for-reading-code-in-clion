@@ -60,6 +60,11 @@
     #endif
 #endif
 
+/**
+ * 创建event loop
+ * @param setsize
+ * @return
+ */
 aeEventLoop *aeCreateEventLoop(int setsize) {
     aeEventLoop *eventLoop;
     int i;
@@ -133,6 +138,15 @@ void aeStop(aeEventLoop *eventLoop) {
     eventLoop->stop = 1;
 }
 
+/**
+ * 创建文件事件
+ * @param eventLoop
+ * @param fd
+ * @param mask
+ * @param proc
+ * @param clientData
+ * @return
+ */
 int aeCreateFileEvent(aeEventLoop *eventLoop, int fd, int mask,
         aeFileProc *proc, void *clientData)
 {
@@ -153,6 +167,12 @@ int aeCreateFileEvent(aeEventLoop *eventLoop, int fd, int mask,
     return AE_OK;
 }
 
+/**
+ * 删除文件事件
+ * @param eventLoop
+ * @param fd
+ * @param mask
+ */
 void aeDeleteFileEvent(aeEventLoop *eventLoop, int fd, int mask)
 {
     if (fd >= eventLoop->setsize) return;
@@ -161,6 +181,7 @@ void aeDeleteFileEvent(aeEventLoop *eventLoop, int fd, int mask)
 
     aeApiDelEvent(eventLoop, fd, mask);
     fe->mask = fe->mask & (~mask);
+    //maxfd收敛到fe不为AE_NONE为止
     if (fd == eventLoop->maxfd && fe->mask == AE_NONE) {
         /* Update the max fd */
         int j;
@@ -201,6 +222,15 @@ static void aeAddMillisecondsToNow(long long milliseconds, long *sec, long *ms) 
     *ms = when_ms;
 }
 
+/**
+ * 创建时间事件
+ * @param eventLoop
+ * @param milliseconds
+ * @param proc
+ * @param clientData
+ * @param finalizerProc
+ * @return
+ */
 long long aeCreateTimeEvent(aeEventLoop *eventLoop, long long milliseconds,
         aeTimeProc *proc, void *clientData,
         aeEventFinalizerProc *finalizerProc)
@@ -259,6 +289,11 @@ static aeTimeEvent *aeSearchNearestTimer(aeEventLoop *eventLoop)
     return nearest;
 }
 
+/**
+ * 执行时间事件
+ * @param eventLoop
+ * @return
+ */
 /* Process time events */
 static int processTimeEvents(aeEventLoop *eventLoop) {
     int processed = 0;
@@ -334,6 +369,12 @@ static int processTimeEvents(aeEventLoop *eventLoop) {
     return processed;
 }
 
+/**
+ * 执行时间事件和文件事件
+ * @param eventLoop
+ * @param flags
+ * @return
+ */
 /* Process every pending time event, then every pending file event
  * (that may be registered by time event callbacks just processed).
  * Without special flags the function sleeps until some file event
@@ -399,6 +440,9 @@ int aeProcessEvents(aeEventLoop *eventLoop, int flags)
             }
         }
 
+        //如果没有时间事件注册，则一直等待（因为redis时间事件的产生依赖于文件事件，所以不需要考虑一直等待的情况），
+        //否则等待最近一次的时间事件到达后，执行时间事件，
+        //如果为AE_DONT_WAIT模式则表明有时间事件未执行，直接跳出循环执行时间事件
         /* Call the multiplexing API, will return only on timeout or when
          * some event fires. */
         numevents = aeApiPoll(eventLoop, tvp);
@@ -434,6 +478,13 @@ int aeProcessEvents(aeEventLoop *eventLoop, int flags)
     return processed; /* return the number of processed file/time events */
 }
 
+/**
+ * 等待指定fd事件的产生
+ * @param fd
+ * @param mask
+ * @param milliseconds
+ * @return
+ */
 /* Wait for milliseconds until the given file descriptor becomes
  * writable/readable/exception */
 int aeWait(int fd, int mask, long long milliseconds) {
@@ -448,7 +499,7 @@ int aeWait(int fd, int mask, long long milliseconds) {
     if ((retval = poll(&pfd, 1, milliseconds))== 1) {
         if (pfd.revents & POLLIN) retmask |= AE_READABLE;
         if (pfd.revents & POLLOUT) retmask |= AE_WRITABLE;
-	if (pfd.revents & POLLERR) retmask |= AE_WRITABLE;
+	    if (pfd.revents & POLLERR) retmask |= AE_WRITABLE;
         if (pfd.revents & POLLHUP) retmask |= AE_WRITABLE;
         return retmask;
     } else {
@@ -456,6 +507,10 @@ int aeWait(int fd, int mask, long long milliseconds) {
     }
 }
 
+/**
+ * 绑定before sleep
+ * @param eventLoop
+ */
 void aeMain(aeEventLoop *eventLoop) {
     eventLoop->stop = 0;
     while (!eventLoop->stop) {

@@ -32,13 +32,23 @@
 #include <sys/select.h>
 #include <string.h>
 
+/**
+ * select事件结构体
+ */
 typedef struct aeApiState {
+    //读事件，写事件分离
     fd_set rfds, wfds;
+    //在select方法调用后，不能保证rfds或者wfds的数据是一致的（因为select之后获取不到fd,需要轮询，所以需要保证单个循环内数据一致）
     /* We need to have a copy of the fd sets as it's not safe to reuse
      * FD sets after select(). */
     fd_set _rfds, _wfds;
 } aeApiState;
 
+/**
+ * 创建select pool
+ * @param eventLoop
+ * @return
+ */
 static int aeApiCreate(aeEventLoop *eventLoop) {
     aeApiState *state = zmalloc(sizeof(aeApiState));
 
@@ -49,6 +59,12 @@ static int aeApiCreate(aeEventLoop *eventLoop) {
     return 0;
 }
 
+/**
+ * 重置select pool（由于select pool未限制大小，所以只判断FD_SETSIZE是否符合大小）
+ * @param eventLoop
+ * @param setsize
+ * @return
+ */
 static int aeApiResize(aeEventLoop *eventLoop, int setsize) {
     /* Just ensure we have enough room in the fd_set type. */
     if (setsize >= FD_SETSIZE) return -1;
@@ -59,6 +75,13 @@ static void aeApiFree(aeEventLoop *eventLoop) {
     zfree(eventLoop->apidata);
 }
 
+/**
+ * select pool中添加一个事件
+ * @param eventLoop
+ * @param fd
+ * @param mask
+ * @return
+ */
 static int aeApiAddEvent(aeEventLoop *eventLoop, int fd, int mask) {
     aeApiState *state = eventLoop->apidata;
 
@@ -67,6 +90,12 @@ static int aeApiAddEvent(aeEventLoop *eventLoop, int fd, int mask) {
     return 0;
 }
 
+/**
+ * select pool中删除一个事件
+ * @param eventLoop
+ * @param fd
+ * @param mask
+ */
 static void aeApiDelEvent(aeEventLoop *eventLoop, int fd, int mask) {
     aeApiState *state = eventLoop->apidata;
 
@@ -74,10 +103,17 @@ static void aeApiDelEvent(aeEventLoop *eventLoop, int fd, int mask) {
     if (mask & AE_WRITABLE) FD_CLR(fd,&state->wfds);
 }
 
+/**
+ * select 事件
+ * @param eventLoop
+ * @param tvp
+ * @return
+ */
 static int aeApiPoll(aeEventLoop *eventLoop, struct timeval *tvp) {
     aeApiState *state = eventLoop->apidata;
     int retval, j, numevents = 0;
 
+    //创建select事件set副本
     memcpy(&state->_rfds,&state->rfds,sizeof(fd_set));
     memcpy(&state->_wfds,&state->wfds,sizeof(fd_set));
 

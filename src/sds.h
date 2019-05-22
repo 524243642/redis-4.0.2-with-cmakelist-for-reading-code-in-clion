@@ -41,8 +41,14 @@
 
 typedef char *sds;
 
+
 /* Note: sdshdr5 is never used, we just access the flags byte directly.
- * However is here to document the layout of type 5 SDS strings. */
+ * However is here to document the layout of type 5 SDS strings.*/
+/**
+ * __attribute__ ((__packed__)) 是c语言作为紧凑型的空间压缩(c最少为4字节,可以节省大量字节空间),
+ * 也方面sds按压缩后的字节读取
+ * sds5数据结构用来储存一些定长的字符，扩展性不强
+ */
 struct __attribute__ ((__packed__)) sdshdr5 {
     unsigned char flags; /* 3 lsb of type, and 5 msb of string length */
     char buf[];
@@ -83,8 +89,13 @@ struct __attribute__ ((__packed__)) sdshdr64 {
 #define SDS_HDR(T,s) ((struct sdshdr##T *)((s)-(sizeof(struct sdshdr##T))))
 #define SDS_TYPE_5_LEN(f) ((f)>>SDS_TYPE_BITS)
 
+/**
+ * 获取sds真实长度
+ * @param s
+ * @return
+ */
 static inline size_t sdslen(const sds s) {
-    unsigned char flags = s[-1];
+    unsigned char flags = s[-1];//用来获取sds header的类型
     switch(flags&SDS_TYPE_MASK) {
         case SDS_TYPE_5:
             return SDS_TYPE_5_LEN(flags);
@@ -100,6 +111,11 @@ static inline size_t sdslen(const sds s) {
     return 0;
 }
 
+/**
+ * 计算sds可用长度
+ * @param s
+ * @return
+ */
 static inline size_t sdsavail(const sds s) {
     unsigned char flags = s[-1];
     switch(flags&SDS_TYPE_MASK) {
@@ -108,7 +124,7 @@ static inline size_t sdsavail(const sds s) {
         }
         case SDS_TYPE_8: {
             SDS_HDR_VAR(8,s);
-            return sh->alloc - sh->len;
+            return sh->alloc - sh->len; //alloc为当前容量，len为已使用容量
         }
         case SDS_TYPE_16: {
             SDS_HDR_VAR(16,s);
@@ -126,13 +142,18 @@ static inline size_t sdsavail(const sds s) {
     return 0;
 }
 
+/**
+ * 在不超过sds本类型容量的情况下重新设置sds的当前占用量
+ * @param s
+ * @param newlen
+ */
 static inline void sdssetlen(sds s, size_t newlen) {
     unsigned char flags = s[-1];
     switch(flags&SDS_TYPE_MASK) {
         case SDS_TYPE_5:
             {
-                unsigned char *fp = ((unsigned char*)s)-1;
-                *fp = SDS_TYPE_5 | (newlen << SDS_TYPE_BITS);
+                unsigned char *fp = ((unsigned char*)s)-1;//获取header
+                *fp = SDS_TYPE_5 | (newlen << SDS_TYPE_BITS);//sds5高五位存储长度，低三位存储类型
             }
             break;
         case SDS_TYPE_8:
@@ -150,6 +171,11 @@ static inline void sdssetlen(sds s, size_t newlen) {
     }
 }
 
+/**
+ * 在不超过sds本类型容量的情况下增加其使用量
+ * @param s
+ * @param inc
+ */
 static inline void sdsinclen(sds s, size_t inc) {
     unsigned char flags = s[-1];
     switch(flags&SDS_TYPE_MASK) {
@@ -175,6 +201,11 @@ static inline void sdsinclen(sds s, size_t inc) {
     }
 }
 
+/**
+ * 计算sds的容量
+ * @param s
+ * @return
+ */
 /* sdsalloc() = sdsavail() + sdslen() */
 static inline size_t sdsalloc(const sds s) {
     unsigned char flags = s[-1];
@@ -193,6 +224,11 @@ static inline size_t sdsalloc(const sds s) {
     return 0;
 }
 
+/**
+ * 在不超过sds当前类型的最大容量的情况下，设置其容量，sds8容量为5位作为固定值，其他结构可以动态扩容缩容
+ * @param s
+ * @param newlen
+ */
 static inline void sdssetalloc(sds s, size_t newlen) {
     unsigned char flags = s[-1];
     switch(flags&SDS_TYPE_MASK) {
@@ -214,6 +250,7 @@ static inline void sdssetalloc(sds s, size_t newlen) {
     }
 }
 
+//以下为sds的主要常用函数
 sds sdsnewlen(const void *init, size_t initlen);
 sds sdsnew(const char *init);
 sds sdsempty(void);

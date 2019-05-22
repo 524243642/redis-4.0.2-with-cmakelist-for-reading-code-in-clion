@@ -46,7 +46,8 @@ typedef struct quicklistNode {
     struct quicklistNode *next;
     unsigned char *zl;
     unsigned int sz;             /* ziplist size in bytes */
-    unsigned int count : 16;     /* count of items in ziplist */
+    /*位域，占用16位，两个字节*/
+    unsigned int count : 16;     /* count of items in ziplist*/
     unsigned int encoding : 2;   /* RAW==1 or LZF==2 */
     unsigned int container : 2;  /* NONE==1 or ZIPLIST==2 */
     unsigned int recompress : 1; /* was this node previous compressed? */
@@ -94,7 +95,7 @@ typedef struct quicklistEntry {
     unsigned char *value;
     long long longval;
     unsigned int sz;
-    int offset;
+    int offset;//保存相对ziplist的偏移量
 } quicklistEntry;
 
 #define QUICKLIST_HEAD 0

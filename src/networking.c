@@ -1971,6 +1971,7 @@ void pauseClients(mstime_t end) {
 /* Return non-zero if clients are currently paused. As a side effect the
  * function checks if the pause time was reached and clear it. */
 int clientsArePaused(void) {
+    //paused超时以后解除paused状态
     if (server.clients_paused &&
         server.clients_pause_end_time < server.mstime)
     {
@@ -1988,7 +1989,7 @@ int clientsArePaused(void) {
 
             /* Don't touch slaves and blocked clients. The latter pending
              * requests be processed when unblocked. */
-            if (c->flags & (CLIENT_SLAVE|CLIENT_BLOCKED)) continue;
+            if (c->flags & (CLIENT_SLAVE|CLIENT_BLOCKED)) continue;//如果client为slave且client为阻塞状态，则不做处理
             c->flags |= CLIENT_UNBLOCKED;
             listAddNodeTail(server.unblocked_clients,c);
         }

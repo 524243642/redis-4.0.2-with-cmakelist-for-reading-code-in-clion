@@ -502,6 +502,9 @@ int compareStringObjectsWithFlags(robj *a, robj *b, int flags) {
         bstr = bufb;
     }
     if (flags & REDIS_COMPARE_COLL) {
+        // 默认情况下(LC_COLLATE为"POSIX"或"C")和strcmp一样根据ASCII比较字符串大小，这个时候是没有区别的。
+        // 对于设置了LC_COLLATE语言环境的情况下，则根据LC_COLLATE设置的语言排序方式进行比较。
+        // 例如：汉字，根据拼音进行比较。
         return strcoll(astr,bstr);
     } else {
         int cmp;

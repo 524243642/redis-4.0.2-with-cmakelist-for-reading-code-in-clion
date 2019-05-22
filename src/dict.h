@@ -56,7 +56,7 @@ typedef struct dictEntry {
 } dictEntry;
 
 typedef struct dictType {
-    uint64_t (*hashFunction)(const void *key);
+    uint64_t (*hashFunction)(const void *key);//用来做hash算法
     void *(*keyDup)(void *privdata, const void *key);
     void *(*valDup)(void *privdata, const void *obj);
     int (*keyCompare)(void *privdata, const void *key1, const void *key2);

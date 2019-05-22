@@ -48,7 +48,7 @@ static const size_t optimization_level[] = {4096, 8192, 16384, 32768, 65536};
 
 /* Maximum size in bytes of any multi-element ziplist.
  * Larger values will live in their own isolated ziplists. */
-#define SIZE_SAFETY_LIMIT 8192
+#define SIZE_SAFETY_LIMIT 8192 //8KB
 
 /* Minimum ziplist size in bytes for attempting compression. */
 #define MIN_COMPRESS_BYTES 48
@@ -98,8 +98,8 @@ quicklist *quicklistCreate(void) {
     quicklist->head = quicklist->tail = NULL;
     quicklist->len = 0;
     quicklist->count = 0;
-    quicklist->compress = 0;
-    quicklist->fill = -2;
+    quicklist->compress = 0;//默认不压缩
+    quicklist->fill = -2;//默认不超过8kb
     return quicklist;
 }
 
@@ -128,6 +128,12 @@ void quicklistSetOptions(quicklist *quicklist, int fill, int depth) {
     quicklistSetCompressDepth(quicklist, depth);
 }
 
+/**
+ * 创建空quicklist
+ * @param fill
+ * @param compress
+ * @return
+ */
 /* Create a new quicklist with some default parameters. */
 quicklist *quicklistNew(int fill, int compress) {
     quicklist *quicklist = quicklistCreate();
@@ -135,6 +141,10 @@ quicklist *quicklistNew(int fill, int compress) {
     return quicklist;
 }
 
+/**
+ * 创建空quicklist node
+ * @return
+ */
 REDIS_STATIC quicklistNode *quicklistCreateNode(void) {
     quicklistNode *node;
     node = zmalloc(sizeof(*node));
@@ -148,9 +158,18 @@ REDIS_STATIC quicklistNode *quicklistCreateNode(void) {
     return node;
 }
 
+/**
+ * 返回quicklist中ziplist节点的总entry个数
+ * @param ql
+ * @return
+ */
 /* Return cached quicklist count */
 unsigned int quicklistCount(const quicklist *ql) { return ql->count; }
 
+/**
+ * 释放quicklist占用空间
+ * @param quicklist
+ */
 /* Free entire quicklist. */
 void quicklistRelease(quicklist *quicklist) {
     unsigned long len;
@@ -172,6 +191,11 @@ void quicklistRelease(quicklist *quicklist) {
     zfree(quicklist);
 }
 
+/**
+ * lzf压缩
+ * @param node
+ * @return
+ */
 /* Compress the ziplist in 'node' and update encoding details.
  * Returns 1 if ziplist compressed successfully.
  * Returns 0 if compression failed or if ziplist too small to compress. */
@@ -181,10 +205,10 @@ REDIS_STATIC int __quicklistCompressNode(quicklistNode *node) {
 #endif
 
     /* Don't bother compressing small values */
-    if (node->sz < MIN_COMPRESS_BYTES)
+    if (node->sz < MIN_COMPRESS_BYTES) /*最少48个字节及以上才压缩*/
         return 0;
 
-    quicklistLZF *lzf = zmalloc(sizeof(*lzf) + node->sz);
+    quicklistLZF *lzf = zmalloc(sizeof(*lzf) + node->sz);//需要申请足够的空间去存储lzf，char[]在初始化时不占用空间
 
     /* Cancel if compression fails or doesn't compress small enough */
     if (((lzf->sz = lzf_compress(node->zl, node->sz, lzf->compressed,
@@ -194,14 +218,17 @@ REDIS_STATIC int __quicklistCompressNode(quicklistNode *node) {
         zfree(lzf);
         return 0;
     }
-    lzf = zrealloc(lzf, sizeof(*lzf) + lzf->sz);
+    lzf = zrealloc(lzf, sizeof(*lzf) + lzf->sz);//回收因为不知道编码后所占用的空间的空闲空间
     zfree(node->zl);
     node->zl = (unsigned char *)lzf;
     node->encoding = QUICKLIST_NODE_ENCODING_LZF;
-    node->recompress = 0;
+    node->recompress = 0;//此节点是否之前有过压缩
     return 1;
 }
 
+/**
+ * lzf压缩宏定义
+ */
 /* Compress only uncompressed nodes. */
 #define quicklistCompressNode(_node)                                           \
     do {                                                                       \
@@ -210,6 +237,11 @@ REDIS_STATIC int __quicklistCompressNode(quicklistNode *node) {
         }                                                                      \
     } while (0)
 
+/**
+ * lzf解压缩
+ * @param node
+ * @return
+ */
 /* Uncompress the ziplist in 'node' and update encoding details.
  * Returns 1 on successful decode, 0 on failure to decode. */
 REDIS_STATIC int __quicklistDecompressNode(quicklistNode *node) {
@@ -230,6 +262,9 @@ REDIS_STATIC int __quicklistDecompressNode(quicklistNode *node) {
     return 1;
 }
 
+/**
+ * lzf解压缩宏定义
+ */
 /* Decompress only compressed nodes. */
 #define quicklistDecompressNode(_node)                                         \
     do {                                                                       \
@@ -238,6 +273,9 @@ REDIS_STATIC int __quicklistDecompressNode(quicklistNode *node) {
         }                                                                      \
     } while (0)
 
+/**
+ * lzf解压缩并且记录之前的解压缩记录 宏定义
+ */
 /* Force node to not be immediately re-compresable */
 #define quicklistDecompressNodeForUse(_node)                                   \
     do {                                                                       \
@@ -247,6 +285,12 @@ REDIS_STATIC int __quicklistDecompressNode(quicklistNode *node) {
         }                                                                      \
     } while (0)
 
+/**
+ * 获取lzf字节数组并且放置在data中，返回lzf的长度
+ * @param node
+ * @param data
+ * @return
+ */
 /* Extract the raw LZF data from this quicklistNode.
  * Pointer to LZF data is assigned to '*data'.
  * Return value is the length of compressed LZF data. */
@@ -256,8 +300,16 @@ size_t quicklistGetLzf(const quicklistNode *node, void **data) {
     return lzf->sz;
 }
 
+/**
+ * quicklist节点是否压缩
+ */
 #define quicklistAllowsCompression(_ql) ((_ql)->compress != 0)
 
+/**
+ * quicklist压缩
+ * @param quicklist
+ * @param node
+ */
 /* Force 'quicklist' to meet compression guidelines set by compress depth.
  * The only way to guarantee interior nodes get compressed is to iterate
  * to our "interior" compress depth then compress the next node we find.
@@ -330,6 +382,9 @@ REDIS_STATIC void __quicklistCompress(const quicklist *quicklist,
     }
 }
 
+/**
+ * 如果之前节点有压缩过，则单独压缩_node节点，否则压缩_ql
+ */
 #define quicklistCompress(_ql, _node)                                          \
     do {                                                                       \
         if ((_node)->recompress)                                               \
@@ -338,6 +393,9 @@ REDIS_STATIC void __quicklistCompress(const quicklist *quicklist,
             __quicklistCompress((_ql), (_node));                               \
     } while (0)
 
+/**
+ * 如果之前节点有压缩过，则单独压缩_node节点
+ */
 /* If we previously used quicklistDecompressNodeForUse(), just recompress. */
 #define quicklistRecompressOnly(_ql, _node)                                    \
     do {                                                                       \
@@ -345,6 +403,13 @@ REDIS_STATIC void __quicklistCompress(const quicklist *quicklist,
             quicklistCompressNode((_node));                                    \
     } while (0)
 
+/**
+ * quicklistInsertNode
+ * @param quicklist
+ * @param old_node
+ * @param new_node
+ * @param after
+ */
 /* Insert 'new_node' after 'old_node' if 'after' is 1.
  * Insert 'new_node' before 'old_node' if 'after' is 0.
  * Note: 'new_node' is *always* uncompressed, so if we assign it to
@@ -377,13 +442,19 @@ REDIS_STATIC void __quicklistInsertNode(quicklist *quicklist,
     if (quicklist->len == 0) {
         quicklist->head = quicklist->tail = new_node;
     }
-
+    //如果old_node存在，则压缩quicklist或者只压缩old_node
     if (old_node)
         quicklistCompress(quicklist, old_node);
 
     quicklist->len++;
 }
 
+/**
+ * quicklist插入节点，在old_node之前
+ * @param quicklist
+ * @param old_node
+ * @param new_node
+ */
 /* Wrappers for node inserting around existing node. */
 REDIS_STATIC void _quicklistInsertNodeBefore(quicklist *quicklist,
                                              quicklistNode *old_node,
@@ -391,12 +462,24 @@ REDIS_STATIC void _quicklistInsertNodeBefore(quicklist *quicklist,
     __quicklistInsertNode(quicklist, old_node, new_node, 0);
 }
 
+/**
+ * quicklist插入节点，在old_node之后
+ * @param quicklist
+ * @param old_node
+ * @param new_node
+ */
 REDIS_STATIC void _quicklistInsertNodeAfter(quicklist *quicklist,
                                             quicklistNode *old_node,
                                             quicklistNode *new_node) {
     __quicklistInsertNode(quicklist, old_node, new_node, 1);
 }
 
+/**
+ * 判断指定的sz是否超过当前的fill指定的分片长度
+ * @param sz
+ * @param fill
+ * @return
+ */
 REDIS_STATIC int
 _quicklistNodeSizeMeetsOptimizationRequirement(const size_t sz,
                                                const int fill) {
@@ -405,7 +488,7 @@ _quicklistNodeSizeMeetsOptimizationRequirement(const size_t sz,
 
     size_t offset = (-fill) - 1;
     if (offset < (sizeof(optimization_level) / sizeof(*optimization_level))) {
-        if (sz <= optimization_level[offset]) {
+        if (sz <= optimization_level[offset]) {//不超过optimization_level指定的字节数
             return 1;
         } else {
             return 0;
@@ -417,9 +500,16 @@ _quicklistNodeSizeMeetsOptimizationRequirement(const size_t sz,
 
 #define sizeMeetsSafetyLimit(sz) ((sz) <= SIZE_SAFETY_LIMIT)
 
+/**
+ * quicklistNode是否允许插入长度为sz的ziplist node节点
+ * @param node
+ * @param fill
+ * @param sz
+ * @return
+ */
 REDIS_STATIC int _quicklistNodeAllowInsert(const quicklistNode *node,
                                            const int fill, const size_t sz) {
-    if (unlikely(!node))
+    if (unlikely(!node))//执行else的可能更大，linux内核 gcc编译器指令优化
         return 0;
 
     int ziplist_overhead;
@@ -430,25 +520,32 @@ REDIS_STATIC int _quicklistNodeAllowInsert(const quicklistNode *node,
         ziplist_overhead = 5;
 
     /* size of forward offset */
-    if (sz < 64)
+    if (sz < 64)//2^6
         ziplist_overhead += 1;
-    else if (likely(sz < 16384))
+    else if (likely(sz < 16384)) //2^14
         ziplist_overhead += 2;
     else
         ziplist_overhead += 5;
 
-    /* new_sz overestimates if 'sz' encodes to an integer type */
+    /* new_sz overestimates if 'sz' encodes to an integer type *//*已经包括ziplist node的整数编码*/
     unsigned int new_sz = node->sz + sz + ziplist_overhead;
     if (likely(_quicklistNodeSizeMeetsOptimizationRequirement(new_sz, fill)))
         return 1;
-    else if (!sizeMeetsSafetyLimit(new_sz))
+    else if (!sizeMeetsSafetyLimit(new_sz))//超出指定长度后不允许插入
         return 0;
-    else if ((int)node->count < fill)
+    else if ((int)node->count < fill)//ziplist的节点数量不超过fill的指定个数则可以插入
         return 1;
     else
         return 0;
 }
 
+/**
+ * 是否允许quicklistNode合并
+ * @param a
+ * @param b
+ * @param fill
+ * @return
+ */
 REDIS_STATIC int _quicklistNodeAllowMerge(const quicklistNode *a,
                                           const quicklistNode *b,
                                           const int fill) {
@@ -458,9 +555,9 @@ REDIS_STATIC int _quicklistNodeAllowMerge(const quicklistNode *a,
     /* approximate merged ziplist size (- 11 to remove one ziplist
      * header/trailer) */
     unsigned int merge_sz = a->sz + b->sz - 11;
-    if (likely(_quicklistNodeSizeMeetsOptimizationRequirement(merge_sz, fill)))
+    if (likely(_quicklistNodeSizeMeetsOptimizationRequirement(merge_sz, fill)))//合并不需要压缩的可能性更大
         return 1;
-    else if (!sizeMeetsSafetyLimit(merge_sz))
+    else if (!sizeMeetsSafetyLimit(merge_sz))//兼容4kb到8kb的情况，提高redis性能
         return 0;
     else if ((int)(a->count + b->count) <= fill)
         return 1;
@@ -468,11 +565,21 @@ REDIS_STATIC int _quicklistNodeAllowMerge(const quicklistNode *a,
         return 0;
 }
 
+/**
+ * node ziplist占用字节数
+ */
 #define quicklistNodeUpdateSz(node)                                            \
     do {                                                                       \
         (node)->sz = ziplistBlobLen((node)->zl);                               \
     } while (0)
 
+/**
+ * quicklist插入长度为sz的value节点到头部
+ * @param quicklist
+ * @param value
+ * @param sz
+ * @return
+ */
 /* Add new entry to head node of quicklist.
  *
  * Returns 0 if used existing head.
@@ -489,13 +596,20 @@ int quicklistPushHead(quicklist *quicklist, void *value, size_t sz) {
         node->zl = ziplistPush(ziplistNew(), value, sz, ZIPLIST_HEAD);
 
         quicklistNodeUpdateSz(node);
-        _quicklistInsertNodeBefore(quicklist, quicklist->head, node);
+        _quicklistInsertNodeBefore(quicklist, quicklist->head, node);//兼容了quicklist head为空的情况
     }
     quicklist->count++;
     quicklist->head->count++;
     return (orig_head != quicklist->head);
 }
 
+/**
+ * quicklist插入长度为sz的value节点到尾部
+ * @param quicklist
+ * @param value
+ * @param sz
+ * @return
+ */
 /* Add new entry to tail node of quicklist.
  *
  * Returns 0 if used existing tail.
@@ -519,6 +633,11 @@ int quicklistPushTail(quicklist *quicklist, void *value, size_t sz) {
     return (orig_tail != quicklist->tail);
 }
 
+/**
+ * quicklist插入ziplist节点（加载rdb中的ziplists）
+ * @param quicklist
+ * @param zl
+ */
 /* Create new node consisting of a pre-formed ziplist.
  * Used for loading RDBs where entire ziplists have been stored
  * to be retrieved later. */
@@ -533,6 +652,12 @@ void quicklistAppendZiplist(quicklist *quicklist, unsigned char *zl) {
     quicklist->count += node->count;
 }
 
+/**
+ * 创建quicklist（指定ziplist）
+ * @param quicklist
+ * @param zl
+ * @return
+ */
 /* Append all values of ziplist 'zl' individually into 'quicklist'.
  *
  * This allows us to restore old RDB ziplists into new quicklists
@@ -556,10 +681,17 @@ quicklist *quicklistAppendValuesFromZiplist(quicklist *quicklist,
         quicklistPushTail(quicklist, value, sz);
         p = ziplistNext(zl, p);
     }
-    zfree(zl);
+    zfree(zl);//zl中采用的是memcopy所以不用担心zl释放后会影响quicklist中的数据
     return quicklist;
 }
 
+/**
+ * 创建quicklist（指定ziplist）
+ * @param fill
+ * @param compress
+ * @param zl
+ * @return
+ */
 /* Create new (potentially multi-node) quicklist from a single existing ziplist.
  *
  * Returns new quicklist.  Frees passed-in ziplist 'zl'. */
@@ -568,6 +700,9 @@ quicklist *quicklistCreateFromZiplist(int fill, int compress,
     return quicklistAppendValuesFromZiplist(quicklistNew(fill, compress), zl);
 }
 
+/**
+ * 如果node的item为0，从quicklist中删除node
+ */
 #define quicklistDeleteIfEmpty(ql, n)                                          \
     do {                                                                       \
         if ((n)->count == 0) {                                                 \
@@ -576,6 +711,11 @@ quicklist *quicklistCreateFromZiplist(int fill, int compress,
         }                                                                      \
     } while (0)
 
+/**
+ * quicklist删除node
+ * @param quicklist
+ * @param node
+ */
 REDIS_STATIC void __quicklistDelNode(quicklist *quicklist,
                                      quicklistNode *node) {
     if (node->next)
@@ -602,6 +742,13 @@ REDIS_STATIC void __quicklistDelNode(quicklist *quicklist,
     quicklist->len--;
 }
 
+/**
+ * quicklist删除指定node中的元素p
+ * @param quicklist
+ * @param node
+ * @param p
+ * @return
+ */
 /* Delete one entry from list given the node for the entry and a pointer
  * to the entry in the node.
  *
@@ -627,6 +774,11 @@ REDIS_STATIC int quicklistDelIndex(quicklist *quicklist, quicklistNode *node,
     return gone ? 1 : 0;
 }
 
+/**
+ * quicklist删除指定的quicklist entry
+ * @param iter
+ * @param entry
+ */
 /* Delete one element represented by 'entry'
  *
  * 'entry' stores enough metadata to delete the proper position in
@@ -644,7 +796,7 @@ void quicklistDelEntry(quicklistIter *iter, quicklistEntry *entry) {
     if (deleted_node) {
         if (iter->direction == AL_START_HEAD) {
             iter->current = next;
-            iter->offset = 0;
+            iter->offset = 0;//offset为ziplist offset
         } else if (iter->direction == AL_START_TAIL) {
             iter->current = prev;
             iter->offset = -1;
@@ -660,6 +812,14 @@ void quicklistDelEntry(quicklistIter *iter, quicklistEntry *entry) {
      *  quicklistNext() will jump to the next node. */
 }
 
+/**
+ * quicklist replace指定的ziplist entry,index为整个quicklist的offset
+ * @param quicklist
+ * @param index
+ * @param data
+ * @param sz
+ * @return
+ */
 /* Replace quicklist entry at offset 'index' by 'data' with length 'sz'.
  *
  * Returns 1 if replace happened.
@@ -679,6 +839,13 @@ int quicklistReplaceAtIndex(quicklist *quicklist, long index, void *data,
     }
 }
 
+/**
+ * quicklist 两个quicklist node merge
+ * @param quicklist
+ * @param a
+ * @param b
+ * @return
+ */
 /* Given two nodes, try to merge their ziplists.
  *
  * This helps us not have a quicklist with 3 element ziplists if
@@ -702,6 +869,7 @@ REDIS_STATIC quicklistNode *_quicklistZiplistMerge(quicklist *quicklist,
     if ((ziplistMerge(&a->zl, &b->zl))) {
         /* We merged ziplists! Now remove the unused quicklistNode. */
         quicklistNode *keep = NULL, *nokeep = NULL;
+        //此处算法由于合并的时候ziplist merge可能选择a-->b，也可能b-->a，所以需要判断需要保留的node
         if (!a->zl) {
             nokeep = a;
             keep = b;
@@ -722,6 +890,11 @@ REDIS_STATIC quicklistNode *_quicklistZiplistMerge(quicklist *quicklist,
     }
 }
 
+/**
+ * quicklistMergeNodes，详见下边的merge注释
+ * @param quicklist
+ * @param center
+ */
 /* Attempt to merge ziplists within two nodes on either side of 'center'.
  *
  * We attempt to merge:
@@ -775,6 +948,13 @@ REDIS_STATIC void _quicklistMergeNodes(quicklist *quicklist,
     }
 }
 
+/**
+ * quicklistSplitNode，详见下边英文注释
+ * @param node
+ * @param offset
+ * @param after
+ * @return
+ */
 /* Split 'node' into two parts, parameterized by 'offset' and 'after'.
  *
  * The 'after' argument controls which quicklistNode gets returned.
@@ -806,7 +986,7 @@ REDIS_STATIC quicklistNode *_quicklistSplitNode(quicklistNode *node, int offset,
 
     /* -1 here means "continue deleting until the list ends" */
     int orig_start = after ? offset + 1 : 0;
-    int orig_extent = after ? -1 : offset;
+    int orig_extent = after ? -1 : offset;//-1转换为unsigned int为4294967295，ziplistDeleteRange会做转化
     int new_start = after ? 0 : offset;
     int new_extent = after ? offset + 1 : -1;
 
@@ -825,6 +1005,14 @@ REDIS_STATIC quicklistNode *_quicklistSplitNode(quicklistNode *node, int offset,
     return new_node;
 }
 
+/**
+ * quicklist 插入节点
+ * @param quicklist
+ * @param entry
+ * @param value
+ * @param sz
+ * @param after
+ */
 /* Insert a new entry before or after existing entry 'entry'.
  *
  * If after==1, the new value is inserted after 'entry', otherwise
@@ -836,7 +1024,7 @@ REDIS_STATIC void _quicklistInsert(quicklist *quicklist, quicklistEntry *entry,
     quicklistNode *node = entry->node;
     quicklistNode *new_node = NULL;
 
-    if (!node) {
+    if (!node) {//如果为空quicklist走以下逻辑
         /* we have no reference node, so let's create only node in the list */
         D("No node given!");
         new_node = quicklistCreateNode();
@@ -922,7 +1110,7 @@ REDIS_STATIC void _quicklistInsert(quicklist *quicklist, quicklistEntry *entry,
         new_node->count++;
         quicklistNodeUpdateSz(new_node);
         __quicklistInsertNode(quicklist, node, new_node, after);
-    } else if (full) {
+    } else if (full) {//如果不为head也不为tail会走到这里，分割ziplistNode插入元素，最后进行尝试合并，避免过小的ziplistNode出现
         /* else, node is full we need to split it. */
         /* covers both after and !after cases */
         D("\tsplitting node...");
@@ -949,6 +1137,13 @@ void quicklistInsertAfter(quicklist *quicklist, quicklistEntry *entry,
     _quicklistInsert(quicklist, entry, value, sz, 1);
 }
 
+/**
+ * quicklist删除指定start位置之后，总共删除count个元素
+ * @param quicklist
+ * @param start
+ * @param count
+ * @return
+ */
 /* Delete a range of elements from the quicklist.
  *
  * elements may span across multiple quicklistNodes, so we
@@ -1038,11 +1233,24 @@ int quicklistDelRange(quicklist *quicklist, const long start,
     return 1;
 }
 
+/**
+ * 判断指定p1的ziplistNode与p2指定的value是否相等
+ * @param p1
+ * @param p2
+ * @param p2_len
+ * @return
+ */
 /* Passthrough to ziplistCompare() */
 int quicklistCompare(unsigned char *p1, unsigned char *p2, int p2_len) {
     return ziplistCompare(p1, p2, p2_len);
 }
 
+/**
+ * 获取quicklist的迭代器
+ * @param quicklist
+ * @param direction
+ * @return
+ */
 /* Returns a quicklist iterator 'iter'. After the initialization every
  * call to quicklistNext() will return the next element of the quicklist. */
 quicklistIter *quicklistGetIterator(const quicklist *quicklist, int direction) {
@@ -1066,6 +1274,13 @@ quicklistIter *quicklistGetIterator(const quicklist *quicklist, int direction) {
     return iter;
 }
 
+/**
+ * 获取指定位置的quicklist迭代器
+ * @param quicklist
+ * @param direction
+ * @param idx
+ * @return
+ */
 /* Initialize an iterator at a specific offset 'idx' and make the iterator
  * return nodes in 'direction' direction. */
 quicklistIter *quicklistGetIteratorAtIdx(const quicklist *quicklist,
@@ -1084,6 +1299,10 @@ quicklistIter *quicklistGetIteratorAtIdx(const quicklist *quicklist,
     }
 }
 
+/**
+ * 释放quicklist迭代器
+ * @param iter
+ */
 /* Release iterator.
  * If we still have a valid current node, then re-encode current node. */
 void quicklistReleaseIterator(quicklistIter *iter) {
@@ -1093,6 +1312,12 @@ void quicklistReleaseIterator(quicklistIter *iter) {
     zfree(iter);
 }
 
+/**
+ * quicklist迭代器的下一个元素
+ * @param iter
+ * @param entry
+ * @return
+ */
 /* Get next element in iterator.
  *
  * Note: You must NOT insert into the list while iterating over it.
@@ -1173,10 +1398,15 @@ int quicklistNext(quicklistIter *iter, quicklistEntry *entry) {
             iter->offset = -1;
         }
         iter->zi = NULL;
-        return quicklistNext(iter, entry);
+        return quicklistNext(iter, entry);//递归获取超范围元素
     }
 }
 
+/**
+ * quicklist 深克隆，内存中有两份
+ * @param orig
+ * @return
+ */
 /* Duplicate the quicklist.
  * On success a copy of the original quicklist is returned.
  *
@@ -1214,6 +1444,13 @@ quicklist *quicklistDup(quicklist *orig) {
     return copy;
 }
 
+/**
+ * quicklist根据index查找ziplist entry，保存到quicklistEntry中
+ * @param quicklist
+ * @param idx
+ * @param entry
+ * @return
+ */
 /* Populate 'entry' with the element at the specified zero-based index
  * where 0 is the head, 1 is the element next to head
  * and so on. Negative integers are used in order to count
@@ -1278,6 +1515,10 @@ int quicklistIndex(const quicklist *quicklist, const long long idx,
     return 1;
 }
 
+/**
+ * quicklist移动最后一个元素到头部
+ * @param quicklist
+ */
 /* Rotate quicklist by moving the tail element to the head. */
 void quicklistRotate(quicklist *quicklist) {
     if (quicklist->count <= 1)
@@ -1304,7 +1545,7 @@ void quicklistRotate(quicklist *quicklist) {
     /* If quicklist has only one node, the head ziplist is also the
      * tail ziplist and PushHead() could have reallocated our single ziplist,
      * which would make our pre-existing 'p' unusable. */
-    if (quicklist->len == 1) {
+    if (quicklist->len == 1) {//防止同一个ziplist插入操作的realloc操作使得p指针失效
         p = ziplistIndex(quicklist->tail->zl, -1);
     }
 
@@ -1312,6 +1553,16 @@ void quicklistRotate(quicklist *quicklist) {
     quicklistDelIndex(quicklist, quicklist->tail, &p);
 }
 
+/**
+ * quicklist弹出指定位置的元素（开头或结尾）
+ * @param quicklist
+ * @param where
+ * @param data
+ * @param sz
+ * @param sval
+ * @param saver
+ * @return
+ */
 /* pop from quicklist and return result in 'data' ptr.  Value of 'data'
  * is the return value of 'saver' function pointer if the data is NOT a number.
  *
@@ -1368,6 +1619,12 @@ int quicklistPopCustom(quicklist *quicklist, int where, unsigned char **data,
     return 0;
 }
 
+/**
+ * quicklist 从data中复制指定长度的数据
+ * @param data
+ * @param sz
+ * @return
+ */
 /* Return a malloc'd copy of data passed in */
 REDIS_STATIC void *_quicklistSaver(unsigned char *data, unsigned int sz) {
     unsigned char *vstr;
@@ -1379,6 +1636,15 @@ REDIS_STATIC void *_quicklistSaver(unsigned char *data, unsigned int sz) {
     return NULL;
 }
 
+/**
+ * quicklist弹出元素
+ * @param quicklist
+ * @param where
+ * @param data
+ * @param sz
+ * @param slong
+ * @return
+ */
 /* Default pop function
  *
  * Returns malloc'd value from quicklist */
@@ -1400,6 +1666,13 @@ int quicklistPop(quicklist *quicklist, int where, unsigned char **data,
     return ret;
 }
 
+/**
+ * quicklist push元素（开头和结尾）
+ * @param quicklist
+ * @param value
+ * @param sz
+ * @param where
+ */
 /* Wrapper to allow argument-based switching between HEAD/TAIL pop */
 void quicklistPush(quicklist *quicklist, void *value, const size_t sz,
                    int where) {

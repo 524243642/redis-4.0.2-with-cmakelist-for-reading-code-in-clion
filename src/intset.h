@@ -32,6 +32,9 @@
 #define __INTSET_H
 #include <stdint.h>
 
+/**
+ * intset结构体，编码，元素个数，连续内存的数组
+ */
 typedef struct intset {
     uint32_t encoding;
     uint32_t length;

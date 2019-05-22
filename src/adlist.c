@@ -33,6 +33,10 @@
 #include "adlist.h"
 #include "zmalloc.h"
 
+/**
+ * 创建list并做初始化
+ * @return
+ */
 /* Create a new list. The created list can be freed with
  * AlFreeList(), but private value of every node need to be freed
  * by the user before to call AlFreeList().
@@ -52,6 +56,10 @@ list *listCreate(void)
     return list;
 }
 
+/**
+ * list置空
+ * @param list
+ */
 /* Remove all the elements from the list without destroying the list itself. */
 void listEmpty(list *list)
 {
@@ -62,23 +70,33 @@ void listEmpty(list *list)
     len = list->len;
     while(len--) {
         next = current->next;
-        if (list->free) list->free(current->value);
-        zfree(current);
+        if (list->free) list->free(current->value);//释放value占用空间
+        zfree(current);//释放listNode本身结构体占用空间
         current = next;
     }
     list->head = list->tail = NULL;
     list->len = 0;
 }
 
+/**
+ * list释放
+ * @param list
+ */
 /* Free the whole list.
  *
  * This function can't fail. */
 void listRelease(list *list)
 {
     listEmpty(list);
-    zfree(list);
+    zfree(list);//清除list本身结构体占用空间
 }
 
+/**
+ * list插入数据到头部
+ * @param list
+ * @param value
+ * @return
+ */
 /* Add a new node to the list, to head, containing the specified 'value'
  * pointer as value.
  *
@@ -105,6 +123,12 @@ list *listAddNodeHead(list *list, void *value)
     return list;
 }
 
+/**
+ * list插入数据到尾部
+ * @param list
+ * @param value
+ * @return
+ */
 /* Add a new node to the list, to tail, containing the specified 'value'
  * pointer as value.
  *
@@ -160,6 +184,11 @@ list *listInsertNode(list *list, listNode *old_node, void *value, int after) {
     return list;
 }
 
+/**
+ * list删除节点
+ * @param list
+ * @param node
+ */
 /* Remove the specified node from the specified list.
  * It's up to the caller to free the private value of the node.
  *
@@ -174,8 +203,8 @@ void listDelNode(list *list, listNode *node)
         node->next->prev = node->prev;
     else
         list->tail = node->prev;
-    if (list->free) list->free(node->value);
-    zfree(node);
+    if (list->free) list->free(node->value); //释放value占用空间
+    zfree(node);//释放node结构体占用空间
     list->len--;
 }
 
@@ -201,10 +230,15 @@ void listReleaseIterator(listIter *iter) {
     zfree(iter);
 }
 
+/**
+ * 获取list迭代器
+ * @param list
+ * @param li
+ */
 /* Create an iterator in the list private iterator structure */
 void listRewind(list *list, listIter *li) {
     li->next = list->head;
-    li->direction = AL_START_HEAD;
+    li->direction = AL_START_HEAD; //迭代方向
 }
 
 void listRewindTail(list *list, listIter *li) {
@@ -212,6 +246,11 @@ void listRewindTail(list *list, listIter *li) {
     li->direction = AL_START_TAIL;
 }
 
+/**
+ * 根据迭代器获取listNode
+ * @param iter
+ * @return
+ */
 /* Return the next element of an iterator.
  * It's valid to remove the currently returned element using
  * listDelNode(), but not to remove other elements.
@@ -239,6 +278,11 @@ listNode *listNext(listIter *iter)
     return current;
 }
 
+/**
+ * 克隆list，可自定义规则实现浅克隆和深克隆
+ * @param orig
+ * @return
+ */
 /* Duplicate the whole list. On out of memory NULL is returned.
  * On success a copy of the original list is returned.
  *
@@ -255,7 +299,7 @@ list *listDup(list *orig)
 
     if ((copy = listCreate()) == NULL)
         return NULL;
-    copy->dup = orig->dup;
+    copy->dup = orig->dup;//克隆方法
     copy->free = orig->free;
     copy->match = orig->match;
     listRewind(orig, &iter);
@@ -264,13 +308,13 @@ list *listDup(list *orig)
 
         if (copy->dup) {
             value = copy->dup(node->value);
-            if (value == NULL) {
+            if (value == NULL) {//如果复制失败，回滚复制操作
                 listRelease(copy);
                 return NULL;
             }
         } else
             value = node->value;
-        if (listAddNodeTail(copy, value) == NULL) {
+        if (listAddNodeTail(copy, value) == NULL) {//如果复制失败，回滚复制操作
             listRelease(copy);
             return NULL;
         }
@@ -278,6 +322,12 @@ list *listDup(list *orig)
     return copy;
 }
 
+/**
+ * list中查找key，可以自定义match方法
+ * @param list
+ * @param key
+ * @return
+ */
 /* Search the list for a node matching a given key.
  * The match is performed using the 'match' method
  * set with listSetMatchMethod(). If no 'match' method
@@ -307,6 +357,12 @@ listNode *listSearchKey(list *list, void *key)
     return NULL;
 }
 
+/**
+ * 根据index查找list node
+ * @param list
+ * @param index
+ * @return
+ */
 /* Return the element at the specified zero-based index
  * where 0 is the head, 1 is the element next to head
  * and so on. Negative integers are used in order to count
@@ -326,6 +382,10 @@ listNode *listIndex(list *list, long index) {
     return n;
 }
 
+/**
+ * 将尾部元素删除并插入到头部
+ * @param list
+ */
 /* Rotate the list removing the tail node and inserting it to the head. */
 void listRotate(list *list) {
     listNode *tail = list->tail;
@@ -342,6 +402,11 @@ void listRotate(list *list) {
     list->head = tail;
 }
 
+/**
+ * 合并两个list
+ * @param l
+ * @param o
+ */
 /* Add all the elements of the list 'o' at the end of the
  * list 'l'. The list 'other' remains empty but otherwise valid. */
 void listJoin(list *l, list *o) {

@@ -1158,6 +1158,10 @@ void watchdogSignalHandler(int sig, siginfo_t *info, void *secret) {
     serverLogFromHandler(LL_WARNING,"--------\n");
 }
 
+/**
+ * redis 定时器发送监察信号
+ * @param period
+ */
 /* Schedule a SIGALRM delivery after the specified period in milliseconds.
  * If a timer is already scheduled, this function will re-schedule it to the
  * specified time. If period is 0 the current timer is disabled. */

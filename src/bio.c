@@ -135,11 +135,11 @@ void bioCreateBackgroundJob(int type, void *arg1, void *arg2, void *arg3) {
     job->arg1 = arg1;
     job->arg2 = arg2;
     job->arg3 = arg3;
-    pthread_mutex_lock(&bio_mutex[type]);
-    listAddNodeTail(bio_jobs[type],job);
-    bio_pending[type]++;
-    pthread_cond_signal(&bio_newjob_cond[type]);
-    pthread_mutex_unlock(&bio_mutex[type]);
+    pthread_mutex_lock(&bio_mutex[type]);//获取主线程锁
+    listAddNodeTail(bio_jobs[type],job);//将改类型bio任务加入异步队列
+    bio_pending[type]++;//该类型的bio任务计数
+    pthread_cond_signal(&bio_newjob_cond[type]);//发送信号,唤醒执行该任务的线程活进程
+    pthread_mutex_unlock(&bio_mutex[type]);//释放锁
 }
 
 void *bioProcessBackgroundJobs(void *arg) {
@@ -168,7 +168,7 @@ void *bioProcessBackgroundJobs(void *arg) {
         serverLog(LL_WARNING,
             "Warning: can't mask SIGALRM in bio.c thread: %s", strerror(errno));
 
-    while(1) {
+    while(1) {//bio永久执行
         listNode *ln;
 
         /* The loop always starts with the lock hold. */
@@ -218,9 +218,9 @@ void *bioProcessBackgroundJobs(void *arg) {
 /* Return the number of pending jobs of the specified type. */
 unsigned long long bioPendingJobsOfType(int type) {
     unsigned long long val;
-    pthread_mutex_lock(&bio_mutex[type]);
-    val = bio_pending[type];
-    pthread_mutex_unlock(&bio_mutex[type]);
+    pthread_mutex_lock(&bio_mutex[type]);//获取锁,为了保证fsync数据强一致性
+    val = bio_pending[type];//获取该类型任务的个数
+    pthread_mutex_unlock(&bio_mutex[type]);//释放锁
     return val;
 }
 

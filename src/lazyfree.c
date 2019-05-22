@@ -51,6 +51,12 @@ size_t lazyfreeGetFreeEffort(robj *obj) {
  * a lazy free list instead of being freed synchronously. The lazy free list
  * will be reclaimed in a different bio.c thread. */
 #define LAZYFREE_THRESHOLD 64
+/**
+ * 异步删除key
+ * @param db
+ * @param key
+ * @return
+ */
 int dbAsyncDelete(redisDb *db, robj *key) {
     /* Deleting an entry from the expires dict will not free the sds of
      * the key, because it is shared with the main dictionary. */
@@ -59,25 +65,25 @@ int dbAsyncDelete(redisDb *db, robj *key) {
     /* If the value is composed of a few allocations, to free in a lazy way
      * is actually just slower... So under a certain limit we just free
      * the object synchronously. */
-    dictEntry *de = dictUnlink(db->dict,key->ptr);
+    dictEntry *de = dictUnlink(db->dict,key->ptr);//软删除
     if (de) {
         robj *val = dictGetVal(de);
-        size_t free_effort = lazyfreeGetFreeEffort(val);
+        size_t free_effort = lazyfreeGetFreeEffort(val);//获取数据结构长度
 
         /* If releasing the object is too much work, let's put it into the
          * lazy free list. */
-        if (free_effort > LAZYFREE_THRESHOLD) {
+        if (free_effort > LAZYFREE_THRESHOLD) {//如果长度大于64
             atomicIncr(lazyfree_objects,1);
-            bioCreateBackgroundJob(BIO_LAZY_FREE,val,NULL,NULL);
-            dictSetVal(db->dict,de,NULL);
+            bioCreateBackgroundJob(BIO_LAZY_FREE,val,NULL,NULL);//创建后台任务
+            dictSetVal(db->dict,de,NULL);//把value设置为null,进行后台删除
         }
     }
 
     /* Release the key-val pair, or just the key if we set the val
      * field to NULL in order to lazy free it later. */
     if (de) {
-        dictFreeUnlinkedEntry(db->dict,de);
-        if (server.cluster_enabled) slotToKeyDel(key);
+        dictFreeUnlinkedEntry(db->dict,de);//删除dict entry
+        if (server.cluster_enabled) slotToKeyDel(key);//如果是redis cluster模式，更新slot信息
         return 1;
     } else {
         return 0;

@@ -32,10 +32,17 @@
 #include <sys/epoll.h>
 
 typedef struct aeApiState {
+    //epoll 监听fd
     int epfd;
+    //epoll wait产生的事件列表
     struct epoll_event *events;
 } aeApiState;
 
+/**
+ * 创建epoll
+ * @param eventLoop
+ * @return
+ */
 static int aeApiCreate(aeEventLoop *eventLoop) {
     aeApiState *state = zmalloc(sizeof(aeApiState));
 
@@ -55,9 +62,16 @@ static int aeApiCreate(aeEventLoop *eventLoop) {
     return 0;
 }
 
+/**
+ * 重置epoll的事件响应列表大小，受限于eventLoop
+ * @param eventLoop
+ * @param setsize
+ * @return
+ */
 static int aeApiResize(aeEventLoop *eventLoop, int setsize) {
     aeApiState *state = eventLoop->apidata;
 
+    //扩容操作，上层逻辑保证
     state->events = zrealloc(state->events, sizeof(struct epoll_event)*setsize);
     return 0;
 }
@@ -70,6 +84,13 @@ static void aeApiFree(aeEventLoop *eventLoop) {
     zfree(state);
 }
 
+/**
+ * epoll添加一个监听事件
+ * @param eventLoop
+ * @param fd
+ * @param mask
+ * @return
+ */
 static int aeApiAddEvent(aeEventLoop *eventLoop, int fd, int mask) {
     aeApiState *state = eventLoop->apidata;
     struct epoll_event ee = {0}; /* avoid valgrind warning */
@@ -87,6 +108,12 @@ static int aeApiAddEvent(aeEventLoop *eventLoop, int fd, int mask) {
     return 0;
 }
 
+/**
+ * epoll删除一个监听事件
+ * @param eventLoop
+ * @param fd
+ * @param delmask
+ */
 static void aeApiDelEvent(aeEventLoop *eventLoop, int fd, int delmask) {
     aeApiState *state = eventLoop->apidata;
     struct epoll_event ee = {0}; /* avoid valgrind warning */
@@ -105,6 +132,12 @@ static void aeApiDelEvent(aeEventLoop *eventLoop, int fd, int delmask) {
     }
 }
 
+/**
+ * 获取当前需要响应的事件集合（通过state->events可以获得具体的事件fd，然后添加到fired队列中，供上层使用）
+ * @param eventLoop
+ * @param tvp
+ * @return
+ */
 static int aeApiPoll(aeEventLoop *eventLoop, struct timeval *tvp) {
     aeApiState *state = eventLoop->apidata;
     int retval, numevents = 0;

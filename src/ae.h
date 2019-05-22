@@ -38,6 +38,7 @@
 #define AE_OK 0
 #define AE_ERR -1
 
+//文件事件掩码
 #define AE_NONE 0
 #define AE_READABLE 1
 #define AE_WRITABLE 2
@@ -62,6 +63,7 @@ typedef int aeTimeProc(struct aeEventLoop *eventLoop, long long id, void *client
 typedef void aeEventFinalizerProc(struct aeEventLoop *eventLoop, void *clientData);
 typedef void aeBeforeSleepProc(struct aeEventLoop *eventLoop);
 
+//文件事件
 /* File event structure */
 typedef struct aeFileEvent {
     int mask; /* one of AE_(READABLE|WRITABLE) */
@@ -70,6 +72,7 @@ typedef struct aeFileEvent {
     void *clientData;
 } aeFileEvent;
 
+//事件事件
 /* Time event structure */
 typedef struct aeTimeEvent {
     long long id; /* time event identifier. */
@@ -87,6 +90,7 @@ typedef struct aeFiredEvent {
     int mask;
 } aeFiredEvent;
 
+//事件循环体
 /* State of an event based program */
 typedef struct aeEventLoop {
     int maxfd;   /* highest file descriptor currently registered */
