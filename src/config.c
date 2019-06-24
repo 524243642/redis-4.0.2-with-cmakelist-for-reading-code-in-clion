@@ -233,7 +233,7 @@ void loadServerConfigFromString(char *config) {
                 err = "Too many bind addresses specified"; goto loaderr;
             }
             for (j = 0; j < addresses; j++)
-                server.bindaddr[j] = zstrdup(argv[j+1]);
+                server.bindaddr[j] = zstrdup(argv[j+1]);//加载监听网卡ip配置，默认为0.0.0.0
             server.bindaddr_count = addresses;
         } else if (!strcasecmp(argv[0],"unixsocket") && argc == 2) {
             server.unixsocket = zstrdup(argv[1]);

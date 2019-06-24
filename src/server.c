@@ -1851,7 +1851,7 @@ int listenToPort(int port, int *fds, int *count) {
             fds[*count] = anetTcp6Server(server.neterr,port,NULL,
                 server.tcp_backlog);
             if (fds[*count] != ANET_ERR) {
-                anetNonBlock(NULL,fds[*count]);
+                anetNonBlock(NULL,fds[*count]);//调用accept时非阻塞
                 (*count)++;
             } else if (errno == EAFNOSUPPORT) {
                 unsupported++;
@@ -1863,7 +1863,7 @@ int listenToPort(int port, int *fds, int *count) {
                 fds[*count] = anetTcpServer(server.neterr,port,NULL,
                     server.tcp_backlog);
                 if (fds[*count] != ANET_ERR) {
-                    anetNonBlock(NULL,fds[*count]);
+                    anetNonBlock(NULL,fds[*count]);//调用accept时非阻塞
                     (*count)++;
                 } else if (errno == EAFNOSUPPORT) {
                     unsupported++;
@@ -1890,7 +1890,7 @@ int listenToPort(int port, int *fds, int *count) {
                 port, server.neterr);
             return C_ERR;
         }
-        anetNonBlock(NULL,fds[*count]);
+        anetNonBlock(NULL,fds[*count]);//设置为非阻塞模式
         (*count)++;
     }
     return C_OK;
@@ -1970,7 +1970,7 @@ void initServer(void) {
 
     /* Open the TCP listening socket for the user commands. */
     if (server.port != 0 &&
-        listenToPort(server.port,server.ipfd,&server.ipfd_count) == C_ERR)
+        listenToPort(server.port,server.ipfd,&server.ipfd_count) == C_ERR)//创建listen fd，selector
         exit(1);
 
     /* Open the listening Unix domain socket. */
